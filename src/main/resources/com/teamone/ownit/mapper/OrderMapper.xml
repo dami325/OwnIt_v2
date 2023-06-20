@@ -1,0 +1,269 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd" >
+<mapper namespace="com.teamone.ownit.mapper.OrderMapper">
+<!-- 서성민 -->
+<select id="selectCartCount" resultType="com.teamone.ownit.vo.ProductVO">
+SELECT 
+	product_idx, product_brand, product_name,
+	(CASE 
+		WHEN product_left_count >= #{order_count}
+		THEN product_model_num
+		END) product_model_num
+		, (SELECT image_real_file1 FROM image WHERE product_idx = #{product_idx}) image_real_file1
+	FROM product
+	WHERE product_idx = #{product_idx}
+</select>
+
+<select id="getMemberInfo" resultType="map">
+select m.member_idx, member_id, member_name, member_phone, addr from member m
+JOIN (select member_idx,
+	CASE
+		when address_gb = 0
+        then address1
+        when address_gb = 0
+        then address2
+        end addr
+from address WHERE address_gb = 0) addr ON m.member_idx = addr.member_idx WHERE m.member_idx = (SELECT member_idx FROM member WHERE member_id = #{sId})
+</select>
+
+<select id="getMaxGroupIdx" resultType="int">
+SELECT IFNULL(MAX(order_group_idx),0)+1 from order_buy;
+</select>
+
+<update id="updateProductCount">
+UPDATE product
+SET product_left_count = product_left_count - #{order_count}, product_sell_count = product_sell_count + #{order_count}
+WHERE product_idx = #{product_idx}
+</update>
+
+<insert id="insertOrderBuy">
+INSERT INTO order_buy (order_group_idx, product_idx, member_idx, address_idx, order_buy_gb, order_buy_date, order_buy_count, order_buy_price)
+VALUES (#{maxGroupIdx},
+		#{product_idx},
+		(SELECT member_idx FROM member WHERE member_id = #{sId}),
+		(SELECT address_idx FROM address WHERE member_idx = (SELECT member_idx FROM member WHERE member_id = #{sId}) AND address_gb = 0),
+		0,
+		date_format(now(),"%y-%m-%d"),
+		#{order_count},
+		#{countTimesPrice}
+		)
+</insert>
+
+<delete id="deleteCart">
+DELETE FROM cart
+WHERE member_idx = (SELECT member_idx FROM member WHERE member_id = #{sId})
+	  AND
+	  product_idx = #{product_idx}
+</delete>
+
+<!-- 박주닮 -->
+	<!-- 상품 정보를 가져오는 구문 -->
+	<select id="productDetail" resultType="com.teamone.ownit.vo.ProductVO">
+		select *
+        	from product
+				,image
+        	where product.product_idx=#{product_idx} and image.product_idx=#{product_idx};
+		
+	</select>
+	
+	<!--  세션아이디로 맴버고유키를 가져오는 구문 -->
+	<select id="selectMemberIdx" resultType="com.teamone.ownit.vo.MemberVO">
+		SELECT member_idx
+		FROM member
+		WHERE member_id=#{sId};
+	</select>
+	
+	<!--  상품 판매폼의 Account,address가 gb이 0인걸 우선으로 호출 -->
+	<select id="selectMemberDetail" resultType="com.teamone.ownit.vo.Order_SellFormMbAddAccVO">
+		SELECT * 
+			FROM member
+        	LEFT JOIN address 
+        	ON member.member_idx=#{member_idx} 
+        	AND address.member_idx=#{member_idx}
+        	AND address_gb = ( 
+        				SELECT address_gb
+					        	FROM member, 
+					        		 address
+					       			 WHERE member.member_idx=#{member_idx}
+									 AND member.member_idx = address.member_idx
+				       				 ORDER BY address_gb *1 asc
+				        			 limit 1
+        			 		 )
+	        LEFT JOIN account 
+	        ON member.member_idx=#{member_idx} 
+	        AND account.member_idx=#{member_idx}
+	        AND account_gb=(
+	        				SELECT account_gb
+	        				FROM member, account
+	        				WHERE member.member_idx=#{member_idx} AND member.member_idx = account.member_idx
+	        				ORDER BY account_gb *1 asc
+	       				    limit 1
+	       				    )
+	       				    WHERE member.member_idx =#{member_idx}
+	       				    limit 1;
+	</select>
+	
+	<!-- order_sell 테이블 insert작업 -->
+	<insert id="insertOrderSell">
+		INSERT INTO order_sell
+			VALUES(
+				null,
+				#{product_idx},
+				#{member_idx},
+				#{account_idx},
+				'0',
+				date_format(now(),"%y-%m-%d")
+			);
+	</insert>
+
+	<!-- order_sell 테이블 정보 조회, 한 맴버가 같은 상품을 여러번 판매했을경우에는 가장 최근 판매 정보 조회 -->
+	<select id="selectOrderSell" resultType="com.teamone.ownit.vo.Order_sellVO">
+		SELECT *
+			FROM order_sell
+			WHERE TRUE
+			  <if test="order_sell_idx == null and order_sell_idx.equals(0)">
+			  AND product_idx=#{product_idx}
+			  </if>
+			  AND member_idx=#{member_idx}
+			  <if test="order_sell_date!=null and !order_sell_date.equals('')">
+			  AND order_sell_date=#{order_sell_date}
+			  </if>
+			  <if test="order_sell_idx!=null and !order_sell_idx.equals(0)">
+			  AND order_sell_idx=#{order_sell_idx}
+			  </if>
+		      ORDER BY order_sell_idx desc
+		      LIMIT 1;
+	</select>
+
+	 <!--  주소 추가 -->
+	<insert id="insertAddress">
+		insert into address
+			values(
+				null,
+				#{member_idx},
+				#{address_zipcode},
+				#{address1},
+				#{address2},
+				'1',
+				#{address_nickname},
+				#{address_recipient}
+			);
+	</insert>
+
+	<!--  주소록 가져오는 구문 -->
+	<select id="selectAddressList" resultType="com.teamone.ownit.vo.Order_SellFormMbAddAccVO">
+		SELECT * FROM address,member
+				WHERE address.member_idx=#{member_idx}
+				AND member.member_idx=#{member_idx}
+				ORDER BY address_gb *1 asc;
+	</select>
+
+	
+	<!-- 주소록에서 주소 변경 -->
+	<select id="clickChangeAddress" resultType="com.teamone.ownit.vo.Order_SellFormMbAddAccVO">
+		 SELECT * 
+			FROM member
+        	LEFT JOIN address 
+        	ON member.member_idx=#{member_idx}
+        	AND address.member_idx=#{member_idx}
+        	AND address.address_idx =#{address_idx}
+	        LEFT JOIN account 
+	        ON member.member_idx=#{member_idx}
+	        AND account.member_idx=#{member_idx}
+	        AND account_gb=(
+	        				SELECT account_gb
+	        				FROM member, account
+	        				WHERE member.member_idx=#{member_idx} 
+	        				AND member.member_idx = account.member_idx
+	        				ORDER BY account_gb *1 asc
+	       				    limit 1
+	       				    )
+                            where address.address_idx=#{address_idx};
+	</select>
+
+	<!-- 판매폼 계좌 추가 -->
+	<insert id="insertAccountSell" >
+		INSERT INTO account
+			values (
+					null,
+					#{member_idx},
+					#{account_bank},
+					#{account_num},
+					#{account_owner_name},
+					'1',
+					#{account_nickname}
+					);
+	</insert>
+	<!-- 계좌추가 성공시 account_idx 검색 -->
+	<select id="selectAccountSell" resultType="com.teamone.ownit.vo.AccountVO">
+		SELECT max(account_idx) as account_idx
+			FROM account
+			WHERE account.member_idx=#{member_idx};
+	</select>
+	
+	<!-- 계좌 추가 성공시 새로운 계좌로 보이도록 하는 구문 -->
+	<select id="newAccountSellForm" resultType="com.teamone.ownit.vo.Order_SellFormMbAddAccVO">
+		SELECT * 
+			FROM member
+        	LEFT JOIN address 
+        	ON member.member_idx=#{member_idx} 
+        	AND address.member_idx=#{member_idx}
+        	AND address_gb = ( 
+        				SELECT address_gb
+					        	FROM member, 
+					        		 address
+					       			 WHERE member.member_idx=#{member_idx}
+									 AND member.member_idx = address.member_idx
+				       				 ORDER BY address_gb *1 asc
+				        			 limit 1
+        			 		 )
+	        LEFT JOIN account 
+	        ON member.member_idx=#{member_idx} 
+	        AND account.member_idx=#{member_idx}
+	        WHERE account.account_idx =#{account_idx}
+	        
+	</select>
+
+	<select id="selectAccountAddressSellForm" resultType="com.teamone.ownit.vo.Order_SellFormMbAddAccVO">
+		    SELECT * 
+			FROM member
+        	LEFT JOIN address 
+        	ON member.member_idx=#{member_idx}
+        	AND address.member_idx=#{member_idx}
+        	AND address.address_idx=#{address_idx}
+	        LEFT JOIN account 
+	        ON member.member_idx=#{member_idx}
+	        AND account.member_idx=#{member_idx}
+	        WHERE account.account_idx =#{account_idx}
+	</select>
+
+	<!--  가장 최근에 insert한 주소 idx 조회 -->
+	<select id="selectAddressIdx" resultType="integer">
+		SELECT max(address_idx) as address_idx 
+		FROM address
+		WHERE member_idx=#{member_idx}
+	</select>
+
+	<!--  계좌목록 가져오는 구문 -->
+	<select id="selectAccountList" resultType="com.teamone.ownit.vo.Order_SellFormMbAddAccVO">
+		SELECT * FROM account,member
+				WHERE account.member_idx=#{member_idx}
+				AND member.member_idx=#{member_idx}
+				ORDER BY account_gb *1 asc;
+	</select>
+
+	<!--  회원의 주소 갯수 조회 -->
+	<select id="getCountAddress" resultType="integer">
+		SELECT count(address_idx) as addressCounter 
+		FROM address 
+		WHERE member_idx=#{member_idx};
+	</select>
+	
+	<!--  회원의 계좌 갯수 조회 -->
+	<select id="getCountAccount" resultType="integer">
+		SELECT count(account_idx) as accountCounter 
+		FROM account 
+		WHERE member_idx=#{member_idx};
+	</select>
+
+</mapper> 

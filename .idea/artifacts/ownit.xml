@@ -1,0 +1,10 @@
+<component name="ArtifactManager">
+  <artifact type="javafx" name="ownit">
+    <output-path>$PROJECT_DIR$/out/artifacts/ownit</output-path>
+    <root id="root">
+      <element id="archive" name="ownit.jar">
+        <element id="module-output" name="ownit" />
+      </element>
+    </root>
+  </artifact>
+</component>
